@@ -20,57 +20,53 @@ pipeline {
         
         stage('Build and SonarQube Analysis') {
             steps {
-                dir('easybuggy') {
-                    withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
-                        sh '''
-                            mvn -Dmaven.test.failure.ignore verify \
-                                org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-                                -Dsonar.token=$SONAR_TOKEN \
-                                -Dsonar.projectKey=easybuggy \
-                                -Dsonar.host.url=${SONAR_HOST_URL}
-                        '''
-                    }
+                withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
+                    sh '''
+                        mvn -Dmaven.test.failure.ignore verify \
+                            org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+                            -Dsonar.token=$SONAR_TOKEN \
+                            -Dsonar.projectKey=easybuggy \
+                            -Dsonar.host.url=${SONAR_HOST_URL}
+                    '''
                 }
             }
         }
         
         stage('OWASP Dependency Check') {
             steps {
-                dir('easybuggy') {
-                    // NVD API key is required since late 2023
-                    // To get an API key: https://nvd.nist.gov/developers/request-an-api-key
-                    // Then add it as 'NVD_API_KEY' credential (Secret text) in Jenkins
+                // NVD API key is required since late 2023
+                // To get an API key: https://nvd.nist.gov/developers/request-an-api-key
+                // Then add it as 'NVD_API_KEY' credential (Secret text) in Jenkins
 
-                    script {
-                        def nvdApiKeyExists = false
-                        try {
-                            withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_KEY')]) {
-                                nvdApiKeyExists = true
-                            }
-                        } catch (Exception e) {
-                            echo "NVD_API_KEY credential not found. Running with cached data only."
+                script {
+                    def nvdApiKeyExists = false
+                    try {
+                        withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_KEY')]) {
+                            nvdApiKeyExists = true
                         }
+                    } catch (Exception e) {
+                        echo "NVD_API_KEY credential not found. Running with cached data only."
+                    }
 
-                        if (nvdApiKeyExists) {
-                            // Run with NVD API key for up-to-date vulnerability data
-                            withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_KEY')]) {
-                                sh '''
-                                    mvn org.owasp:dependency-check-maven:check \
-                                        -DfailBuildOnCVSS=8 \
-                                        -DnvdApiKey=$NVD_KEY \
-                                        -DnvdApiDelay=6000 \
-                                        || true
-                                '''
-                            }
-                        } else {
-                            // Run with cached/offline data only (no API calls)
+                    if (nvdApiKeyExists) {
+                        // Run with NVD API key for up-to-date vulnerability data
+                        withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_KEY')]) {
                             sh '''
                                 mvn org.owasp:dependency-check-maven:check \
                                     -DfailBuildOnCVSS=8 \
-                                    -DautoUpdate=false \
+                                    -DnvdApiKey=$NVD_KEY \
+                                    -DnvdApiDelay=6000 \
                                     || true
                             '''
                         }
+                    } else {
+                        // Run with cached/offline data only (no API calls)
+                        sh '''
+                            mvn org.owasp:dependency-check-maven:check \
+                                -DfailBuildOnCVSS=8 \
+                                -DautoUpdate=false \
+                                || true
+                        '''
                     }
                 }
             }
@@ -86,11 +82,9 @@ pipeline {
                 environment name: 'BUILD_DOCKER', value: 'true'
             }
             steps {
-                dir('easybuggy') {
+                withDockerRegistry([credentialsId: "dockerlogin", url: ""]) {
                     script {
-                        withDockerRegistry([credentialsId: "dockerlogin", url: ""]) {
-                            app = docker.build("${DOCKER_IMAGE}:${BUILD_NUMBER}")
-                        }
+                        app = docker.build("${DOCKER_IMAGE}:${BUILD_NUMBER}")
                     }
                 }
             }
@@ -112,24 +106,20 @@ pipeline {
         
         stage('SCA Scan with Snyk') {
             steps {
-                dir('easybuggy') {
-                    withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
-                        sh '''
-                            snyk auth $SNYK_TOKEN
-                            snyk test --severity-threshold=high || true
-                        '''
-                    }
+                withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
+                    sh '''
+                        snyk auth $SNYK_TOKEN
+                        snyk test --severity-threshold=high || true
+                    '''
                 }
             }
         }
 
         stage('IaC Security Scan with Checkov') {
             steps {
-                dir('easybuggy') {
-                    sh '''
-                        checkov -f main.tf --soft-fail || true
-                    '''
-                }
+                sh '''
+                    checkov -f main.tf --soft-fail || true
+                '''
             }
         }
     }
