@@ -8,7 +8,7 @@ pipeline {
     environment {
         SONAR_HOST_URL = 'http://sonarqube:9000'
         DOCKER_IMAGE = 'easybuggy'
-        BUILD_DOCKER = 'false'  // Set to 'true' to enable Docker build and container scanning
+        BUILD_DOCKER = 'true'  // Set to 'false' to disable Docker build and container scanning
     }
 
     stages {
