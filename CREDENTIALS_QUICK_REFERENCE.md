@@ -1,6 +1,6 @@
 # Jenkins Credentials Quick Reference
 
-## 📋 Required Credentials Summary
+## Required Credentials Summary
 
 | Credential Name | Type | Purpose | Where to Get It |
 |----------------|------|---------|-----------------|
@@ -11,7 +11,7 @@
 
 ---
 
-## 🔐 Credential Details
+## Credential Details
 
 ### 1. Docker Hub Credentials (`dockerlogin`)
 
@@ -33,11 +33,6 @@ Description: Docker Hub PAT for CI/CD
 5. Permissions: **Read, Write, Delete**
 6. Copy the token (starts with `dckr_pat_`)
 
-**Token Format:**
-```
-dckr_pat_1234567890abcdefghijklmnopqrstuvwxyz
-```
-
 ---
 
 ### 2. Snyk Token (`SNYK_TOKEN`)
@@ -57,11 +52,6 @@ Description: Snyk API Token for vulnerability scanning
 3. Click your name (bottom-left) → Account settings
 4. Scroll to "Auth Token" → Click to show
 5. Copy the token
-
-**Token Format:**
-```
-12345678-1234-1234-1234-123456789abc
-```
 
 ---
 
@@ -88,11 +78,6 @@ Description: SonarQube authentication token
 6. Click **Generate**
 7. Copy the token immediately
 
-**Token Format:**
-```
-squ_1234567890abcdefghijklmnopqrstuvwxyz
-```
-
 ---
 
 ### 4. NVD API Key (`NVD_API_KEY`) - Optional
@@ -112,16 +97,11 @@ Description: NVD API Key for vulnerability database updates
 3. Verify your email
 4. Copy the API key from the email
 
-**Token Format:**
-```
-12345678-1234-1234-1234-123456789abc
-```
-
 **Note:** Without this key, OWASP Dependency Check will use cached data only.
 
 ---
 
-## ✅ Verification Checklist
+## Verification Checklist
 
 ### Before Running Pipeline:
 
@@ -131,7 +111,6 @@ Description: NVD API Key for vulnerability database updates
 - [ ] (Optional) NVD API key added to Jenkins as `NVD_API_KEY`
 - [ ] `BUILD_DOCKER` set to `'true'` in Jenkinsfile.docker
 - [ ] All credentials have **Global** scope
-- [ ] Credential IDs match exactly (case-sensitive)
 
 ### Test Credentials:
 
@@ -148,63 +127,18 @@ curl -u YOUR_TOKEN: http://localhost:9000/api/system/status
 
 ---
 
-## 🚨 Common Issues
+## Adding Credentials via Jenkins UI
 
-### Issue: "Credentials not found"
-**Solution:** Verify credential ID matches exactly (case-sensitive)
-
-### Issue: "Docker authentication failed"
-**Solution:** Use Personal Access Token, not password
-
-### Issue: "Snyk authentication failed"
-**Solution:** Check token hasn't been revoked in Snyk dashboard
-
-### Issue: "SonarQube 401 Unauthorized"
-**Solution:** Regenerate token in SonarQube
-
----
-
-## 📝 Adding Credentials via Jenkins UI
-
-1. **Navigate to Credentials:**
+**Navigate to Credentials:**
    ```
    Jenkins Dashboard → Manage Jenkins → Credentials → System → Global credentials (unrestricted)
    ```
 
-2. **Click "Add Credentials"**
-
-3. **Fill in the form** according to the tables above
-
-4. **Click "Create"**
-
-5. **Verify** the credential appears in the list
-
 ---
 
-## 🔄 Rotating Credentials
-
-### When to Rotate:
-- Every 90 days (security best practice)
-- When a team member leaves
-- If credentials are accidentally exposed
-- If you suspect compromise
-
-### How to Rotate:
-
-1. **Generate new token** in the respective service
-2. **Update Jenkins credential**:
-   - Go to credential → Click "Update"
-   - Replace old token with new token
-   - Click "Save"
-3. **Test pipeline** to ensure it works
-4. **Revoke old token** in the service
-
----
-
-## 📚 Additional Resources
+## Additional Resources
 
 - **Docker Hub Tokens**: https://docs.docker.com/security/for-developers/access-tokens/
 - **Snyk Authentication**: https://docs.snyk.io/snyk-api/authentication-for-api
 - **SonarQube Tokens**: https://docs.sonarsource.com/sonarqube/latest/user-guide/user-account/generating-and-using-tokens/
 - **NVD API**: https://nvd.nist.gov/developers/start-here
-
