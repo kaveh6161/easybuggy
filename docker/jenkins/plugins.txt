@@ -1,0 +1,30 @@
+# Core Jenkins plugins
+configuration-as-code
+workflow-aggregator
+git
+github
+credentials-binding
+pipeline-stage-view
+blueocean
+
+# Docker plugins
+docker-plugin
+docker-workflow
+docker-commons
+
+# Maven plugin
+maven-plugin
+
+# SonarQube integration
+sonar
+
+# Security and DevSecOps plugins
+warnings-ng
+dependency-check-jenkins-plugin
+
+# Utility plugins
+timestamper
+ws-cleanup
+build-timeout
+antisamy-markup-formatter
+
