@@ -1,0 +1,139 @@
+pipeline {
+    agent any
+    
+    tools {
+        maven 'Maven_3_8_7'
+    }
+    
+    environment {
+        SONAR_HOST_URL = 'http://sonarqube:9000'
+        DOCKER_IMAGE = 'easybuggy'
+        BUILD_DOCKER = 'true'  // Set to 'false' to disable Docker build and container scanning
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('Build and SonarQube Analysis') {
+            steps {
+                withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
+                    sh '''
+                        mvn -Dmaven.test.failure.ignore verify \
+                            org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+                            -Dsonar.token=$SONAR_TOKEN \
+                            -Dsonar.projectKey=easybuggy \
+                            -Dsonar.host.url=${SONAR_HOST_URL}
+                    '''
+                }
+            }
+        }
+        
+        stage('OWASP Dependency Check') {
+            steps {
+                // NVD API key is required since late 2023
+                // To get an API key: https://nvd.nist.gov/developers/request-an-api-key
+                // Then add it as 'NVD_API_KEY' credential (Secret text) in Jenkins
+
+                script {
+                    def nvdApiKeyExists = false
+                    try {
+                        withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_KEY')]) {
+                            nvdApiKeyExists = true
+                        }
+                    } catch (Exception e) {
+                        echo "NVD_API_KEY credential not found. Running with cached data only."
+                    }
+
+                    if (nvdApiKeyExists) {
+                        // Run with NVD API key for up-to-date vulnerability data
+                        withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_KEY')]) {
+                            sh '''
+                                mvn org.owasp:dependency-check-maven:check \
+                                    -DfailBuildOnCVSS=8 \
+                                    -DnvdApiKey=$NVD_KEY \
+                                    -DnvdApiDelay=6000 \
+                                    || true
+                            '''
+                        }
+                    } else {
+                        // Run with cached/offline data only (no API calls)
+                        sh '''
+                            mvn org.owasp:dependency-check-maven:check \
+                                -DfailBuildOnCVSS=8 \
+                                -DautoUpdate=false \
+                                || true
+                        '''
+                    }
+                }
+            }
+            post {
+                always {
+                    dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+                }
+            }
+        }
+        
+        stage('Build Docker Image') {
+            when {
+                environment name: 'BUILD_DOCKER', value: 'true'
+            }
+            steps {
+                withDockerRegistry([credentialsId: "dockerlogin", url: ""]) {
+                    script {
+                        app = docker.build("${DOCKER_IMAGE}:${BUILD_NUMBER}")
+                    }
+                }
+            }
+        }
+
+        stage('Container Security Scan with Snyk') {
+            when {
+                environment name: 'BUILD_DOCKER', value: 'true'
+            }
+            steps {
+                withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
+                    sh '''
+                        snyk auth $SNYK_TOKEN
+                        snyk container test ${DOCKER_IMAGE}:${BUILD_NUMBER} --severity-threshold=high || true
+                    '''
+                }
+            }
+        }
+        
+        stage('SCA Scan with Snyk') {
+            steps {
+                withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
+                    sh '''
+                        snyk auth $SNYK_TOKEN
+                        snyk test --severity-threshold=high || true
+                    '''
+                }
+            }
+        }
+
+        stage('IaC Security Scan with Checkov') {
+            steps {
+                sh '''
+                    checkov -f main.tf --soft-fail || true
+                '''
+            }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed!'
+        }
+    }
+}
+

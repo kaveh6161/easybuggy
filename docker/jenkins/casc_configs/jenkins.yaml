@@ -1,0 +1,61 @@
+jenkins:
+  systemMessage: "DevSecOps Jenkins - Configured automatically with JCasC"
+  numExecutors: 2
+  mode: NORMAL
+  scmCheckoutRetryCount: 3
+
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "${JENKINS_ADMIN_PASSWORD:-admin}"
+          properties:
+            - mailer:
+                emailAddress: "admin@example.com"
+
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+  globalNodeProperties:
+    - envVars:
+        env:
+          - key: "MAVEN_HOME"
+            value: "/opt/maven"
+          - key: "PATH"
+            value: "/opt/maven/bin:/usr/local/bin:/usr/bin:/bin"
+
+tool:
+  maven:
+    installations:
+      - name: "Maven_3_8_7"
+        home: "/opt/maven"
+  git:
+    installations:
+      - name: "Default"
+        home: "git"
+
+unclassified:
+  location:
+    url: "http://jenkins:8080/"
+    adminAddress: "admin@example.com"
+  
+  sonarGlobalConfiguration:
+    buildWrapperEnabled: true
+    installations:
+      - name: "SonarQube"
+        serverUrl: "http://sonarqube:9000"
+        credentialsId: "SONAR_TOKEN"
+        triggers:
+          skipScmCause: false
+          skipUpstreamCause: false
+
+  globalLibraries:
+    libraries: []
+
+security:
+  scriptApproval:
+    approvedSignatures:
+      - "method groovy.lang.GroovyObject invokeMethod java.lang.String java.lang.Object"
+
