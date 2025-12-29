@@ -30,6 +30,17 @@ services:
       retries: 10
       start_period: 300s
 
+  # Docker socket permission fixer (runs before Jenkins starts)
+  docker-socket-proxy:
+    image: alpine/socat
+    container_name: docker-socket-proxy
+    command: "TCP-LISTEN:2375,fork,reuseaddr UNIX-CONNECT:/var/run/docker.sock"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+
   # Jenkins with Docker support and Maven
   jenkins:
     build:
@@ -42,9 +53,9 @@ services:
     environment:
       - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
       - CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
     volumes:
       - jenkins_home:/var/jenkins_home
-      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - devsecops-network
     # Resource limits for Jenkins with Maven builds
@@ -60,6 +71,8 @@ services:
     depends_on:
       sonarqube:
         condition: service_healthy
+      docker-socket-proxy:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/login || exit 1"]
       interval: 30s

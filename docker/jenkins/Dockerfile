@@ -57,10 +57,6 @@ RUN curl -fsSL https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/ter
     && unzip terraform.zip -d /usr/local/bin \
     && rm terraform.zip
 
-# Add jenkins user to docker group (will be created when docker socket is mounted)
-RUN groupadd -g 999 docker || true \
-    && usermod -aG docker jenkins
-
 # Switch back to jenkins user
 USER jenkins
 
