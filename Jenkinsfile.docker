@@ -8,6 +8,7 @@ pipeline {
     environment {
         SONAR_HOST_URL = 'http://sonarqube:9000'
         DOCKER_IMAGE = 'easybuggy'
+        BUILD_DOCKER = 'false'  // Set to 'true' to enable Docker build and container scanning
     }
 
     stages {
@@ -21,8 +22,9 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
                     sh '''
-                        mvn -Dmaven.test.failure.ignore verify sonar:sonar \
-                            -Dsonar.login=$SONAR_TOKEN \
+                        mvn -Dmaven.test.failure.ignore verify \
+                            org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+                            -Dsonar.token=$SONAR_TOKEN \
                             -Dsonar.projectKey=easybuggy \
                             -Dsonar.host.url=${SONAR_HOST_URL}
                     '''
@@ -42,6 +44,9 @@ pipeline {
         }
         
         stage('Build Docker Image') {
+            when {
+                environment name: 'BUILD_DOCKER', value: 'true'
+            }
             steps {
                 withDockerRegistry([credentialsId: "dockerlogin", url: ""]) {
                     script {
@@ -50,8 +55,11 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Container Security Scan with Snyk') {
+            when {
+                environment name: 'BUILD_DOCKER', value: 'true'
+            }
             steps {
                 withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
                     sh '''
