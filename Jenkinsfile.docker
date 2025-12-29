@@ -34,7 +34,16 @@ pipeline {
         
         stage('OWASP Dependency Check') {
             steps {
-                sh 'mvn org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=8 || true'
+                // NVD API key is required since late 2023. Get one at: https://nvd.nist.gov/developers/request-an-api-key
+                // Add NVD_API_KEY credential in Jenkins, then uncomment the withCredentials block
+                // For now, running with cached/offline data only
+                sh '''
+                    mvn org.owasp:dependency-check-maven:check \
+                        -DfailBuildOnCVSS=8 \
+                        -DnvdDatafeedUrl=https://dependency-check.github.io/DependencyCheck_CLI/nvd-datafeed/ \
+                        -DautoUpdate=false \
+                        || true
+                '''
             }
             post {
                 always {

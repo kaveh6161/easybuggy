@@ -36,9 +36,20 @@ RUN apt-get update && apt-get install -y \
     && /opt/checkov-venv/bin/pip install --no-cache-dir checkov \
     && ln -s /opt/checkov-venv/bin/checkov /usr/local/bin/checkov
 
-# Install Snyk CLI
-RUN curl -Lo /usr/local/bin/snyk https://static.snyk.io/cli/latest/snyk-linux \
-    && chmod +x /usr/local/bin/snyk
+# Install Node.js (required for SonarQube JS/HTML analysis)
+ENV NODE_VERSION=20
+RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Snyk CLI (detect architecture and download appropriate binary)
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "arm64" ]; then \
+        curl -Lo /usr/local/bin/snyk https://static.snyk.io/cli/latest/snyk-linux-arm64; \
+    else \
+        curl -Lo /usr/local/bin/snyk https://static.snyk.io/cli/latest/snyk-linux; \
+    fi && \
+    chmod +x /usr/local/bin/snyk
 
 # Install Terraform for IaC scanning
 ENV TERRAFORM_VERSION=1.6.6
