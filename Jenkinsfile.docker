@@ -34,16 +34,41 @@ pipeline {
         
         stage('OWASP Dependency Check') {
             steps {
-                // NVD API key is required since late 2023. Get one at: https://nvd.nist.gov/developers/request-an-api-key
-                // Add NVD_API_KEY credential in Jenkins, then uncomment the withCredentials block
-                // For now, running with cached/offline data only
-                sh '''
-                    mvn org.owasp:dependency-check-maven:check \
-                        -DfailBuildOnCVSS=8 \
-                        -DnvdDatafeedUrl=https://dependency-check.github.io/DependencyCheck_CLI/nvd-datafeed/ \
-                        -DautoUpdate=false \
-                        || true
-                '''
+                // NVD API key is required since late 2023
+                // To get an API key: https://nvd.nist.gov/developers/request-an-api-key
+                // Then add it as 'NVD_API_KEY' credential (Secret text) in Jenkins
+
+                script {
+                    def nvdApiKeyExists = false
+                    try {
+                        withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_KEY')]) {
+                            nvdApiKeyExists = true
+                        }
+                    } catch (Exception e) {
+                        echo "NVD_API_KEY credential not found. Running with cached data only."
+                    }
+
+                    if (nvdApiKeyExists) {
+                        // Run with NVD API key for up-to-date vulnerability data
+                        withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_KEY')]) {
+                            sh '''
+                                mvn org.owasp:dependency-check-maven:check \
+                                    -DfailBuildOnCVSS=8 \
+                                    -DnvdApiKey=$NVD_KEY \
+                                    -DnvdApiDelay=6000 \
+                                    || true
+                            '''
+                        }
+                    } else {
+                        // Run with cached/offline data only (no API calls)
+                        sh '''
+                            mvn org.owasp:dependency-check-maven:check \
+                                -DfailBuildOnCVSS=8 \
+                                -DautoUpdate=false \
+                                || true
+                        '''
+                    }
+                }
             }
             post {
                 always {

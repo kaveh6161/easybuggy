@@ -13,6 +13,16 @@ services:
       - sonarqube_extensions:/opt/sonarqube/extensions
     networks:
       - devsecops-network
+    # Resource limits based on SonarQube official recommendations
+    # https://docs.sonarsource.com/sonarqube/latest/requirements/prerequisites-and-overview/
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'      # Max 2 CPU cores
+          memory: 4G       # Max 4GB RAM (SonarQube + embedded Elasticsearch)
+        reservations:
+          cpus: '1.0'      # Reserve at least 1 CPU core
+          memory: 2G       # Reserve at least 2GB RAM
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9000/api/system/status | grep -q UP || exit 1"]
       interval: 30s
@@ -37,6 +47,16 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - devsecops-network
+    # Resource limits for Jenkins with Maven builds
+    # Accounts for Jenkins controller + build jobs with Maven/Docker
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'      # Max 2 CPU cores (for parallel builds)
+          memory: 3G       # Max 3GB RAM (Jenkins + Maven builds)
+        reservations:
+          cpus: '0.5'      # Reserve at least 0.5 CPU core
+          memory: 1G       # Reserve at least 1GB RAM
     depends_on:
       sonarqube:
         condition: service_healthy
