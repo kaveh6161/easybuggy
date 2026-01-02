@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Maven
-ENV MAVEN_VERSION=3.8.7
+ENV MAVEN_VERSION=3.9.12
 ENV MAVEN_HOME=/opt/maven
 ENV PATH=${MAVEN_HOME}/bin:${PATH}
 
