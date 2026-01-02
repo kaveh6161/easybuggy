@@ -3,7 +3,7 @@
  *
  * Features:
  * - Ephemeral Docker agents (no builds on Jenkins controller)
- * - Kaniko for daemonless Docker image builds
+ * - Docker-in-Docker for image builds via mounted socket
  * - All security scan results archived as artifacts
  * - OWASP ZAP DAST scanning
  * - Parallel execution of independent stages
@@ -149,22 +149,19 @@ pipeline {
             }
         }
 
-        stage('Build Image with Kaniko') {
+        stage('Build and Push Image') {
             steps {
-                // Run Kaniko as a container to build the Docker image
-                // Kaniko builds without Docker daemon access - perfect for CI/CD
+                // Build Docker image using Docker CLI
+                // The agent has Docker socket access for building images
                 sh '''
-                    docker run --rm \
-                        --network docker_devsecops-network \
-                        -v ${WORKSPACE}:/workspace \
-                        gcr.io/kaniko-project/executor:latest \
-                        --context=/workspace \
-                        --dockerfile=/workspace/Dockerfile \
-                        --destination=${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER} \
-                        --destination=${REGISTRY_URL}/${DOCKER_IMAGE}:latest \
-                        --insecure \
-                        --cache=true \
-                        --cache-repo=${REGISTRY_URL}/${DOCKER_IMAGE}/cache
+                    # Build the Docker image
+                    docker build -t ${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER} \
+                        -t ${REGISTRY_URL}/${DOCKER_IMAGE}:latest \
+                        .
+
+                    # Push to local registry
+                    docker push ${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER}
+                    docker push ${REGISTRY_URL}/${DOCKER_IMAGE}:latest
                 '''
             }
         }
