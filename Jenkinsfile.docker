@@ -17,13 +17,10 @@
  */
 
 pipeline {
-    // Use Docker agent for all stages by default
+    // Use Docker Cloud agent provisioned by Jenkins
+    // The 'devsecops-agent' label matches the Docker Cloud template
     agent {
-        docker {
-            image 'devsecops-agent:latest'
-            label 'devsecops-agent'
-            args '--network docker_devsecops-network'
-        }
+        label 'devsecops-agent'
     }
 
     options {
