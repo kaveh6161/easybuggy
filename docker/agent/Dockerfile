@@ -22,12 +22,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Docker CLI (needed to run Kaniko and manage containers)
+# Install Docker CLI (needed to build images and manage containers)
 RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
     && apt-get update \
     && apt-get install -y --no-install-recommends docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
+
+# Add jenkins user to root group for Docker socket access
+# On Docker Desktop (macOS/Windows), the socket is owned by root:root (GID 0)
+# This allows the jenkins user to access /var/run/docker.sock when mounted
+RUN usermod -aG root jenkins
 
 # Install Maven
 ENV MAVEN_VERSION=3.9.12

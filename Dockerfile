@@ -1,5 +1,5 @@
 # Build stage - using Eclipse Temurin (OpenJDK replacement)
-FROM maven:3.9.12-eclipse-temurin-8-focal AS builder
+FROM maven:3.9.12-eclipse-temurin-8-alpine AS builder
 COPY . /usr/src/easybuggy/
 WORKDIR /usr/src/easybuggy/
 RUN mvn -B package -DskipTests
