@@ -7,10 +7,16 @@ credentials-binding
 pipeline-stage-view
 blueocean
 
-# Docker plugins
+# Docker plugins for ephemeral agents
 docker-plugin
 docker-workflow
 docker-commons
+docker-java-api
+
+# Pipeline utilities
+pipeline-utility-steps
+pipeline-build-step
+pipeline-input-step
 
 # Maven plugin
 maven-plugin
@@ -27,4 +33,5 @@ timestamper
 ws-cleanup
 build-timeout
 antisamy-markup-formatter
+http_request
 

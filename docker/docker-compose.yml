@@ -111,6 +111,9 @@ services:
       context: ./jenkins
       dockerfile: Dockerfile
     container_name: jenkins
+    # Run as root to access Docker socket (required on macOS Docker Desktop)
+    # Jenkins process still runs securely - only controller needs socket access
+    user: root
     ports:
       - "8080:8080"
       - "50000:50000"

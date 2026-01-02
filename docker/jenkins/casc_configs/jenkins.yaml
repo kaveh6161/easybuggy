@@ -47,8 +47,8 @@ jenkins:
               image: "devsecops-agent:latest"
               network: "docker_devsecops-network"
               # Mount Docker socket so agent can run Docker CLI commands
-              volumes:
-                - "/var/run/docker.sock:/var/run/docker.sock"
+              mounts:
+                - "type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock"
             remoteFs: "/home/jenkins/agent"
             connector:
               attach:
