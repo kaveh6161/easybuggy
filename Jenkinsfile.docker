@@ -150,19 +150,14 @@ pipeline {
         }
 
         stage('Build Image with Kaniko') {
-            agent {
-                docker {
-                    image 'gcr.io/kaniko-project/executor:debug'
-                    label 'kaniko'
-                    args '''--network docker_devsecops-network \
-                           --entrypoint="" \
-                           -v ${WORKSPACE}:/workspace'''
-                }
-            }
             steps {
-                // Kaniko builds without Docker daemon
+                // Run Kaniko as a container to build the Docker image
+                // Kaniko builds without Docker daemon access - perfect for CI/CD
                 sh '''
-                    /kaniko/executor \
+                    docker run --rm \
+                        --network docker_devsecops-network \
+                        -v ${WORKSPACE}:/workspace \
+                        gcr.io/kaniko-project/executor:latest \
                         --context=/workspace \
                         --dockerfile=/workspace/Dockerfile \
                         --destination=${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER} \

@@ -1,7 +1,8 @@
 jenkins:
-  systemMessage: "DevSecOps Jenkins - Configured automatically with JCasC"
-  numExecutors: 2
-  mode: NORMAL
+  systemMessage: "DevSecOps Jenkins - Configured automatically with JCasC. All jobs run on ephemeral Docker agents."
+  # No executors on controller - all jobs run on Docker agents
+  numExecutors: 0
+  mode: EXCLUSIVE
   scmCheckoutRetryCount: 3
 
   securityRealm:
@@ -18,6 +19,7 @@ jenkins:
     loggedInUsersCanDoAnything:
       allowAnonymousRead: false
 
+  # Global environment variables available to all agents
   globalNodeProperties:
     - envVars:
         env:
@@ -25,6 +27,53 @@ jenkins:
             value: "/opt/maven"
           - key: "PATH"
             value: "/opt/maven/bin:/usr/local/bin:/usr/bin:/bin"
+          - key: "REGISTRY_URL"
+            value: "registry:5000"
+          - key: "ZAP_HOST"
+            value: "http://zap:8090"
+
+  # Docker Cloud configuration for ephemeral agents
+  clouds:
+    - docker:
+        name: "docker-cloud"
+        dockerApi:
+          dockerHost:
+            uri: "unix:///var/run/docker.sock"
+        templates:
+          # DevSecOps Agent - for most pipeline stages
+          - labelString: "devsecops-agent"
+            name: "devsecops-agent"
+            dockerTemplateBase:
+              image: "devsecops-agent:latest"
+              network: "docker_devsecops-network"
+              # Mount Docker socket so agent can run Kaniko and other containers
+              mounts:
+                - "type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock"
+            remoteFs: "/home/jenkins/agent"
+            connector:
+              attach:
+                user: "jenkins"
+            instanceCapStr: "2"
+            retentionStrategy:
+              idleMinutes: 10
+            # Use local image - don't try to pull from registry
+            pullStrategy: PULL_NEVER
+
+          # Kaniko Agent - for building Docker images without Docker daemon
+          - labelString: "kaniko"
+            name: "kaniko-agent"
+            dockerTemplateBase:
+              image: "gcr.io/kaniko-project/executor:debug"
+              network: "docker_devsecops-network"
+            remoteFs: "/workspace"
+            connector:
+              attach:
+                user: "root"
+            instanceCapStr: "1"
+            retentionStrategy:
+              idleMinutes: 5
+            # Pull from GCR as needed
+            pullStrategy: PULL_LATEST
 
 tool:
   maven:
@@ -40,7 +89,7 @@ unclassified:
   location:
     url: "http://jenkins:8080/"
     adminAddress: "admin@example.com"
-  
+
   sonarGlobalConfiguration:
     buildWrapperEnabled: true
     installations:
@@ -58,4 +107,6 @@ security:
   scriptApproval:
     approvedSignatures:
       - "method groovy.lang.GroovyObject invokeMethod java.lang.String java.lang.Object"
+      - "method java.lang.String trim"
+      - "staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods getText java.net.URL"
 
