@@ -22,11 +22,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Docker CLI (needed to build images and manage containers)
+# Install Docker CLI and Buildx plugin (needed to build images and manage containers)
 RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
     && apt-get update \
-    && apt-get install -y --no-install-recommends docker-ce-cli \
+    && apt-get install -y --no-install-recommends docker-ce-cli docker-buildx-plugin \
     && rm -rf /var/lib/apt/lists/*
 
 # Add jenkins user to root group for Docker socket access

@@ -33,7 +33,9 @@ pipeline {
 
     environment {
         SONAR_HOST_URL = 'http://sonarqube:9000'
-        REGISTRY_URL = 'registry:5000'
+        // Registry URL for Docker daemon operations (build/push)
+        // Uses localhost:5050 which maps to registry:5000 and is in Docker's insecure registries
+        REGISTRY_URL = 'localhost:5050'
         DOCKER_IMAGE = 'easybuggy'
         ZAP_HOST = 'http://zap:8090'
         ZAP_TIMEOUT_MINUTES = '20'
@@ -151,17 +153,18 @@ pipeline {
 
         stage('Build and Push Image') {
             steps {
-                // Build Docker image using Docker CLI
-                // The agent has Docker socket access for building images
+                // Build and push Docker image using buildx
+                // The agent has Docker socket access and buildx plugin installed
                 sh '''
-                    # Build the Docker image
-                    docker build -t ${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER} \
+                    # Build and push the Docker image using buildx
+                    # --push flag builds and pushes in one step
+                    # --provenance=false avoids attestation issues with insecure registries
+                    docker buildx build \
+                        -t ${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER} \
                         -t ${REGISTRY_URL}/${DOCKER_IMAGE}:latest \
+                        --push \
+                        --provenance=false \
                         .
-
-                    # Push to local registry
-                    docker push ${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER}
-                    docker push ${REGISTRY_URL}/${DOCKER_IMAGE}:latest
                 '''
             }
         }
@@ -171,7 +174,7 @@ pipeline {
                 withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
                     sh '''
                         snyk auth $SNYK_TOKEN
-                        # Scan the image from local registry
+                        # Scan the image from local registry (use host-accessible URL)
                         snyk container test ${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER} \
                             --json \
                             --severity-threshold=high \
@@ -187,7 +190,7 @@ pipeline {
                     // Start easybuggy container for DAST scanning
                     def appContainerId = ''
                     try {
-                        // Pull and run the built image
+                        // Pull and run the built image (use host-accessible registry URL for docker commands)
                         sh """
                             # Pull image from local registry
                             docker pull ${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER}
