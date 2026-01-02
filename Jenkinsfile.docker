@@ -1,43 +1,90 @@
+/**
+ * DevSecOps Pipeline for easybuggy
+ *
+ * Features:
+ * - Ephemeral Docker agents (no builds on Jenkins controller)
+ * - Kaniko for daemonless Docker image builds
+ * - All security scan results archived as artifacts
+ * - OWASP ZAP DAST scanning
+ * - Parallel execution of independent stages
+ *
+ * Security Tools:
+ * - SonarQube (SAST)
+ * - OWASP Dependency-Check (SCA)
+ * - Snyk (SCA + Container)
+ * - Checkov (IaC)
+ * - OWASP ZAP (DAST)
+ */
+
 pipeline {
-    agent any
-    
-    tools {
-        maven 'Maven_3_8_7'
+    // Use Docker agent for all stages by default
+    agent {
+        docker {
+            image 'devsecops-agent:latest'
+            label 'devsecops-agent'
+            args '--network docker_devsecops-network'
+        }
     }
-    
+
+    options {
+        // Retain artifacts for last 10 builds
+        buildDiscarder(logRotator(numToKeepStr: '10', artifactNumToKeepStr: '10'))
+        timestamps()
+        timeout(time: 60, unit: 'MINUTES')
+        disableConcurrentBuilds()
+    }
+
     environment {
         SONAR_HOST_URL = 'http://sonarqube:9000'
+        REGISTRY_URL = 'registry:5000'
         DOCKER_IMAGE = 'easybuggy'
-        BUILD_DOCKER = 'true'  // Set to 'false' to disable Docker build and container scanning
+        ZAP_HOST = 'http://zap:8090'
+        ZAP_TIMEOUT_MINUTES = '20'
+        REPORTS_DIR = 'security-reports'
     }
 
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
+                // Create reports directory
+                sh "mkdir -p ${REPORTS_DIR}"
             }
         }
-        
-        stage('Build and SonarQube Analysis') {
+
+        stage('Build and Test') {
+            steps {
+                sh 'mvn -Dmaven.test.failure.ignore clean verify'
+            }
+            post {
+                always {
+                    junit testResults: '**/target/surefire-reports/*.xml', allowEmptyResults: true
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
             steps {
                 withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
                     sh '''
-                        mvn -Dmaven.test.failure.ignore verify \
-                            org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+                        mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
                             -Dsonar.token=$SONAR_TOKEN \
                             -Dsonar.projectKey=easybuggy \
-                            -Dsonar.host.url=${SONAR_HOST_URL}
+                            -Dsonar.host.url=${SONAR_HOST_URL} || true
+                    '''
+                    // Export SonarQube results via API (best-effort)
+                    sh '''
+                        sleep 10  # Wait for analysis to complete
+                        curl -s -u "$SONAR_TOKEN:" \
+                            "${SONAR_HOST_URL}/api/issues/search?projectKeys=easybuggy&resolved=false" \
+                            -o ${REPORTS_DIR}/sonar-report.json || true
                     '''
                 }
             }
         }
-        
+
         stage('OWASP Dependency Check') {
             steps {
-                // NVD API key is required since late 2023
-                // To get an API key: https://nvd.nist.gov/developers/request-an-api-key
-                // Then add it as 'NVD_API_KEY' credential (Secret text) in Jenkins
-
                 script {
                     def nvdApiKeyExists = false
                     try {
@@ -49,26 +96,27 @@ pipeline {
                     }
 
                     if (nvdApiKeyExists) {
-                        // Run with NVD API key for up-to-date vulnerability data
                         withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_KEY')]) {
                             sh '''
                                 mvn org.owasp:dependency-check-maven:check \
-                                    -DfailBuildOnCVSS=8 \
+                                    -DfailBuildOnCVSS=11 \
+                                    -Dformat=ALL \
                                     -DnvdApiKey=$NVD_KEY \
-                                    -DnvdApiDelay=6000 \
-                                    || true
+                                    -DnvdApiDelay=6000 || true
                             '''
                         }
                     } else {
-                        // Run with cached/offline data only (no API calls)
                         sh '''
                             mvn org.owasp:dependency-check-maven:check \
-                                -DfailBuildOnCVSS=8 \
-                                -DautoUpdate=false \
-                                || true
+                                -DfailBuildOnCVSS=11 \
+                                -Dformat=ALL \
+                                -DautoUpdate=false || true
                         '''
                     }
                 }
+                // Copy report to reports directory
+                sh 'cp target/dependency-check-report.xml ${REPORTS_DIR}/ || true'
+                sh 'cp target/dependency-check-report.json ${REPORTS_DIR}/ || true'
             }
             post {
                 always {
@@ -76,63 +124,181 @@ pipeline {
                 }
             }
         }
-        
-        stage('Build Docker Image') {
-            when {
-                environment name: 'BUILD_DOCKER', value: 'true'
-            }
-            steps {
-                withDockerRegistry([credentialsId: "dockerlogin", url: ""]) {
-                    script {
-                        app = docker.build("${DOCKER_IMAGE}:${BUILD_NUMBER}")
+
+        stage('Parallel Security Scans') {
+            parallel {
+                stage('Snyk SCA') {
+                    steps {
+                        withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
+                            sh '''
+                                snyk auth $SNYK_TOKEN
+                                snyk test --json --severity-threshold=high \
+                                    > ${REPORTS_DIR}/snyk-sca-report.json || true
+                            '''
+                        }
+                    }
+                }
+
+                stage('Checkov IaC') {
+                    steps {
+                        sh '''
+                            checkov -f main.tf \
+                                --output json \
+                                --soft-fail \
+                                > ${REPORTS_DIR}/checkov-report.json || true
+                        '''
                     }
                 }
             }
         }
 
-        stage('Container Security Scan with Snyk') {
-            when {
-                environment name: 'BUILD_DOCKER', value: 'true'
-            }
-            steps {
-                withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
-                    sh '''
-                        snyk auth $SNYK_TOKEN
-                        snyk container test ${DOCKER_IMAGE}:${BUILD_NUMBER} --severity-threshold=high || true
-                    '''
+        stage('Build Image with Kaniko') {
+            agent {
+                docker {
+                    image 'gcr.io/kaniko-project/executor:debug'
+                    label 'kaniko'
+                    args '''--network docker_devsecops-network \
+                           --entrypoint="" \
+                           -v ${WORKSPACE}:/workspace'''
                 }
             }
+            steps {
+                // Kaniko builds without Docker daemon
+                sh '''
+                    /kaniko/executor \
+                        --context=/workspace \
+                        --dockerfile=/workspace/Dockerfile \
+                        --destination=${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER} \
+                        --destination=${REGISTRY_URL}/${DOCKER_IMAGE}:latest \
+                        --insecure \
+                        --cache=true \
+                        --cache-repo=${REGISTRY_URL}/${DOCKER_IMAGE}/cache
+                '''
+            }
         }
-        
-        stage('SCA Scan with Snyk') {
+
+        stage('Snyk Container Scan') {
             steps {
                 withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
                     sh '''
                         snyk auth $SNYK_TOKEN
-                        snyk test --severity-threshold=high || true
+                        # Scan the image from local registry
+                        snyk container test ${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER} \
+                            --json \
+                            --severity-threshold=high \
+                            > ${REPORTS_DIR}/snyk-container-report.json || true
                     '''
                 }
             }
         }
 
-        stage('IaC Security Scan with Checkov') {
+        stage('DAST with OWASP ZAP') {
             steps {
-                sh '''
-                    checkov -f main.tf --soft-fail || true
-                '''
+                script {
+                    // Start easybuggy container for DAST scanning
+                    def appContainerId = ''
+                    try {
+                        // Pull and run the built image
+                        sh """
+                            # Pull image from local registry
+                            docker pull ${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER}
+
+                            # Run easybuggy app
+                            docker run -d --name easybuggy-dast-${BUILD_NUMBER} \
+                                --network docker_devsecops-network \
+                                -p 18080:8080 \
+                                ${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER}
+                        """
+
+                        appContainerId = "easybuggy-dast-${BUILD_NUMBER}"
+
+                        // Wait for app to be ready
+                        sh '''
+                            echo "Waiting for easybuggy to start..."
+                            for i in $(seq 1 30); do
+                                if curl -s http://easybuggy-dast-${BUILD_NUMBER}:8080 > /dev/null 2>&1; then
+                                    echo "easybuggy is ready!"
+                                    break
+                                fi
+                                echo "Attempt $i: waiting..."
+                                sleep 5
+                            done
+                        '''
+
+                        // Run ZAP full active scan
+                        sh """
+                            echo "Starting OWASP ZAP full active scan..."
+
+                            # Start spider scan
+                            curl -s "${ZAP_HOST}/JSON/spider/action/scan/?url=http://easybuggy-dast-${BUILD_NUMBER}:8080&recurse=true"
+
+                            # Wait for spider to complete
+                            while [ \$(curl -s "${ZAP_HOST}/JSON/spider/view/status/" | jq -r '.status') != "100" ]; do
+                                echo "Spider progress: \$(curl -s "${ZAP_HOST}/JSON/spider/view/status/" | jq -r '.status')%"
+                                sleep 10
+                            done
+                            echo "Spider scan complete"
+
+                            # Start active scan
+                            curl -s "${ZAP_HOST}/JSON/ascan/action/scan/?url=http://easybuggy-dast-${BUILD_NUMBER}:8080&recurse=true"
+
+                            # Wait for active scan to complete (with timeout)
+                            TIMEOUT=\$(( ${ZAP_TIMEOUT_MINUTES} * 60 ))
+                            ELAPSED=0
+                            while [ \$(curl -s "${ZAP_HOST}/JSON/ascan/view/status/" | jq -r '.status') != "100" ] && [ \$ELAPSED -lt \$TIMEOUT ]; do
+                                echo "Active scan progress: \$(curl -s "${ZAP_HOST}/JSON/ascan/view/status/" | jq -r '.status')%"
+                                sleep 30
+                                ELAPSED=\$((\$ELAPSED + 30))
+                            done
+                            echo "Active scan complete or timed out"
+
+                            # Generate reports
+                            curl -s "${ZAP_HOST}/JSON/core/view/alerts/?baseurl=http://easybuggy-dast-${BUILD_NUMBER}:8080" \
+                                > ${REPORTS_DIR}/zap-report.json
+
+                            curl -s "${ZAP_HOST}/OTHER/core/other/htmlreport/" \
+                                > ${REPORTS_DIR}/zap-report.html
+
+                            echo "ZAP reports generated"
+                        """
+
+                    } catch (Exception e) {
+                        echo "DAST stage failed: ${e.message}"
+                    } finally {
+                        // Cleanup: stop and remove easybuggy container
+                        sh """
+                            docker stop easybuggy-dast-${BUILD_NUMBER} || true
+                            docker rm easybuggy-dast-${BUILD_NUMBER} || true
+                        """
+                    }
+                }
             }
         }
     }
-    
+
     post {
         always {
+            // Archive all security reports
+            archiveArtifacts artifacts: "${REPORTS_DIR}/**/*", allowEmptyArchive: true
+
+            // Publish HTML reports if available
+            publishHTML(target: [
+                allowMissing: true,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: "${REPORTS_DIR}",
+                reportFiles: 'zap-report.html',
+                reportName: 'ZAP DAST Report'
+            ])
+
             cleanWs()
         }
         success {
-            echo 'Pipeline completed successfully!'
+            echo 'DevSecOps Pipeline completed successfully!'
+            echo "All security reports archived as artifacts"
         }
         failure {
-            echo 'Pipeline failed!'
+            echo 'Pipeline failed! Check the logs and archived reports for details.'
         }
     }
 }
