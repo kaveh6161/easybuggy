@@ -7,8 +7,8 @@ This Docker Compose setup provides a complete DevSecOps CI/CD environment for th
 The environment uses ephemeral Docker agents for pipeline execution, with no builds running on the Jenkins controller. Images are built using Kaniko (daemonless) and stored in a local Docker registry.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        Docker Compose Network                               │
+┌────────────────────────────────────────────────────────────────────────────┐
+│                        Docker Compose Network                              │
 ├─────────────┬─────────────┬─────────────┬─────────────┬────────────────────┤
 │  Jenkins    │  SonarQube  │  Registry   │  OWASP ZAP  │  Jenkins Agent     │
 │  Controller │  Server     │  (local)    │  (DAST)     │  (ephemeral)       │
@@ -18,13 +18,13 @@ The environment uses ephemeral Docker agents for pipeline execution, with no bui
 
 ## Components
 
-| Service | Port | Purpose |
-|---------|------|---------|
-| **Jenkins** | 8080 | CI/CD controller (no local builds) |
-| **SonarQube** | 9000 | SAST - Code quality and security |
-| **Registry** | 5050 | Local Docker image registry |
-| **OWASP ZAP** | 8090 | DAST - Dynamic security scanning |
-| **Jenkins Agent** | - | Ephemeral agent with DevSecOps tools |
+| Service           | Port | Purpose                                     |
+|------------------|------|---------------------------------------------|
+| **Jenkins**  | 8080 | CI/CD controller (no local builds)          |
+| **SonarQube**  | 9000 | SAST - Code quality and security            |
+| **Registry**  | 5050 | Local Docker image registry                 |
+| **OWASP ZAP**  | 8090 | DAST - Dynamic security scanning            |
+| **Jenkins Agent**  |-    | Ephemeral agent with DevSecOps tools        |
 
 ## Security Tools
 
@@ -73,7 +73,7 @@ Add the following credentials in Jenkins (Manage Jenkins > Credentials):
 | Credential ID | Type | Purpose | Required |
 |---------------|------|---------|----------|
 | `SONAR_TOKEN` | Secret text | SonarQube authentication | Yes |
-| `SNYK_TOKEN` | Secret text | Snyk SCA and container scanning | Yes |
+| `SNYK_TOKEN`  | Secret text | Snyk SCA and container scanning | Yes |
 | `NVD_API_KEY` | Secret text | OWASP Dependency-Check updates | Optional |
 
 **Get API Keys:**
