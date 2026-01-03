@@ -10,8 +10,11 @@ FROM eclipse-temurin:25.0.1_8-jre-alpine-3.23
 WORKDIR /app
 COPY --from=builder /usr/src/easybuggy/target/easybuggy.jar /app/
 
-# Create logs directory
-RUN mkdir -p /app/logs
+# Create directories needed by the embedded Tomcat and application
+# - logs/ for application logs
+# - .extract/webapps/ is where embedded Tomcat extracts the webapp
+RUN mkdir -p /app/logs /app/.extract/webapps && \
+    chmod -R 777 /app
 
 # Expose application port and debug port
 EXPOSE 8080 9009

@@ -211,9 +211,9 @@ pipeline {
                             sleep 5
                             docker logs easybuggy-dast-${BUILD_NUMBER} 2>&1 | head -50 || true
 
-                            # Debug: Show network info
+                            # Debug: Show network info (using jq for reliable JSON parsing)
                             echo "=== Network info ==="
-                            docker inspect easybuggy-dast-${BUILD_NUMBER} --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' || true
+                            docker inspect easybuggy-dast-${BUILD_NUMBER} | jq -r '.[0].NetworkSettings.Networks | to_entries[0].value.IPAddress' || true
                         """
 
                         appContainerId = "easybuggy-dast-${BUILD_NUMBER}"
@@ -224,8 +224,8 @@ pipeline {
                         sh """
                             echo "Waiting for easybuggy to start..."
 
-                            # Get the container's IP address for direct access
-                            CONTAINER_IP=\$(docker inspect easybuggy-dast-${BUILD_NUMBER} --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
+                            # Get the container's IP address for direct access (using jq for reliable JSON parsing)
+                            CONTAINER_IP=\$(docker inspect easybuggy-dast-${BUILD_NUMBER} | jq -r '.[0].NetworkSettings.Networks | to_entries[0].value.IPAddress')
                             echo "Container IP: \$CONTAINER_IP"
 
                             for i in \$(seq 1 30); do
