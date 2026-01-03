@@ -195,11 +195,25 @@ pipeline {
                             # Pull image from local registry
                             docker pull ${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER}
 
-                            # Run easybuggy app
+                            # Run easybuggy app on the same network as this agent
+                            # The container name will be used as the hostname for network access
                             docker run -d --name easybuggy-dast-${BUILD_NUMBER} \
                                 --network docker_devsecops-network \
                                 -p 18080:8080 \
                                 ${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER}
+
+                            # Debug: Show container status
+                            echo "=== Container status ==="
+                            docker ps -a | grep easybuggy-dast-${BUILD_NUMBER} || true
+
+                            # Debug: Show container logs (first 50 lines)
+                            echo "=== Container logs ==="
+                            sleep 5
+                            docker logs easybuggy-dast-${BUILD_NUMBER} 2>&1 | head -50 || true
+
+                            # Debug: Show network info
+                            echo "=== Network info ==="
+                            docker inspect easybuggy-dast-${BUILD_NUMBER} --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' || true
                         """
 
                         appContainerId = "easybuggy-dast-${BUILD_NUMBER}"
@@ -209,27 +223,46 @@ pipeline {
                         // Dollar signs for shell variables (like $i) must be escaped as \$
                         sh """
                             echo "Waiting for easybuggy to start..."
+
+                            # Get the container's IP address for direct access
+                            CONTAINER_IP=\$(docker inspect easybuggy-dast-${BUILD_NUMBER} --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
+                            echo "Container IP: \$CONTAINER_IP"
+
                             for i in \$(seq 1 30); do
-                                if curl -s http://easybuggy-dast-${BUILD_NUMBER}:8080 > /dev/null 2>&1; then
-                                    echo "easybuggy is ready!"
+                                # Try connecting by IP address (more reliable than DNS in some Docker setups)
+                                if curl -s http://\$CONTAINER_IP:8080 > /dev/null 2>&1; then
+                                    echo "easybuggy is ready at IP \$CONTAINER_IP!"
                                     break
                                 fi
                                 echo "Attempt \$i: waiting..."
                                 sleep 5
                             done
+
                             # Verify the app is actually reachable before proceeding
-                            if ! curl -s http://easybuggy-dast-${BUILD_NUMBER}:8080 > /dev/null 2>&1; then
+                            if ! curl -s http://\$CONTAINER_IP:8080 > /dev/null 2>&1; then
                                 echo "ERROR: easybuggy app is not reachable after 30 attempts"
+                                echo "=== Final container logs ==="
+                                docker logs easybuggy-dast-${BUILD_NUMBER} 2>&1 | tail -100 || true
                                 exit 1
                             fi
+
+                            # Store the IP for use in ZAP scan (export doesn't work across sh blocks, use file)
+                            echo "\$CONTAINER_IP" > /tmp/easybuggy_ip_${BUILD_NUMBER}
                         """
 
                         // Run ZAP full active scan
+                        // Use the container IP address for ZAP to reach the app
                         sh """
                             echo "Starting OWASP ZAP full active scan..."
 
-                            # Start spider scan
-                            curl -s "${ZAP_HOST}/JSON/spider/action/scan/?url=http://easybuggy-dast-${BUILD_NUMBER}:8080&recurse=true"
+                            # Read the container IP that was saved in the previous step
+                            CONTAINER_IP=\$(cat /tmp/easybuggy_ip_${BUILD_NUMBER})
+                            TARGET_URL="http://\$CONTAINER_IP:8080"
+                            echo "Target URL for ZAP: \$TARGET_URL"
+
+                            # Start spider scan using IP address
+                            echo "Starting spider scan..."
+                            curl -s "${ZAP_HOST}/JSON/spider/action/scan/?url=\$TARGET_URL&recurse=true"
 
                             # Wait for spider to complete
                             while [ \$(curl -s "${ZAP_HOST}/JSON/spider/view/status/" | jq -r '.status') != "100" ]; do
@@ -238,8 +271,9 @@ pipeline {
                             done
                             echo "Spider scan complete"
 
-                            # Start active scan
-                            curl -s "${ZAP_HOST}/JSON/ascan/action/scan/?url=http://easybuggy-dast-${BUILD_NUMBER}:8080&recurse=true"
+                            # Start active scan using IP address
+                            echo "Starting active scan..."
+                            curl -s "${ZAP_HOST}/JSON/ascan/action/scan/?url=\$TARGET_URL&recurse=true"
 
                             # Wait for active scan to complete (with timeout)
                             TIMEOUT=\$(( ${ZAP_TIMEOUT_MINUTES} * 60 ))
@@ -252,13 +286,16 @@ pipeline {
                             echo "Active scan complete or timed out"
 
                             # Generate reports
-                            curl -s "${ZAP_HOST}/JSON/core/view/alerts/?baseurl=http://easybuggy-dast-${BUILD_NUMBER}:8080" \
+                            curl -s "${ZAP_HOST}/JSON/core/view/alerts/?baseurl=\$TARGET_URL" \
                                 > ${REPORTS_DIR}/zap-report.json
 
                             curl -s "${ZAP_HOST}/OTHER/core/other/htmlreport/" \
                                 > ${REPORTS_DIR}/zap-report.html
 
                             echo "ZAP reports generated"
+
+                            # Cleanup temp file
+                            rm -f /tmp/easybuggy_ip_${BUILD_NUMBER}
                         """
 
                     } catch (Exception e) {
