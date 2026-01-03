@@ -205,17 +205,24 @@ pipeline {
                         appContainerId = "easybuggy-dast-${BUILD_NUMBER}"
 
                         // Wait for app to be ready
-                        sh '''
+                        // NOTE: Using double quotes (""") so BUILD_NUMBER is interpolated by Jenkins
+                        // Dollar signs for shell variables (like $i) must be escaped as \$
+                        sh """
                             echo "Waiting for easybuggy to start..."
-                            for i in $(seq 1 30); do
+                            for i in \$(seq 1 30); do
                                 if curl -s http://easybuggy-dast-${BUILD_NUMBER}:8080 > /dev/null 2>&1; then
                                     echo "easybuggy is ready!"
                                     break
                                 fi
-                                echo "Attempt $i: waiting..."
+                                echo "Attempt \$i: waiting..."
                                 sleep 5
                             done
-                        '''
+                            # Verify the app is actually reachable before proceeding
+                            if ! curl -s http://easybuggy-dast-${BUILD_NUMBER}:8080 > /dev/null 2>&1; then
+                                echo "ERROR: easybuggy app is not reachable after 30 attempts"
+                                exit 1
+                            fi
+                        """
 
                         // Run ZAP full active scan
                         sh """
