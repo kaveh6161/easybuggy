@@ -220,9 +220,11 @@
 				</configuration>
 			</plugin>
 			<plugin>
+				<!-- Using version 2.1 due to bug MTOMCAT-263 in version 2.2 -->
+				<!-- https://issues.apache.org/jira/browse/MTOMCAT-263 -->
 				<groupId>org.apache.tomcat.maven</groupId>
 				<artifactId>tomcat7-maven-plugin</artifactId>
-				<version>2.2</version>
+				<version>2.1</version>
 				<executions>
 					<execution>
 						<id>tomcat-run</id>

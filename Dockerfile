@@ -1,17 +1,21 @@
 # Build stage - using Eclipse Temurin (OpenJDK replacement)
-FROM maven:3.9.12-eclipse-temurin-8-focal AS builder
+FROM maven:3.9.12-eclipse-temurin-8-noble AS builder
 COPY . /usr/src/easybuggy/
 WORKDIR /usr/src/easybuggy/
 RUN mvn -B package -DskipTests
 
-# Runtime stage - using Eclipse Temurin slim image
-FROM eclipse-temurin:25.0.1_8-jre-alpine-3.23
+# Runtime stage - using Eclipse Temurin JDK 8 (same version as build)
+# Note: The embedded Tomcat7 runner has compatibility issues with newer JDKs
+FROM eclipse-temurin:8-jdk-jammy
 
 WORKDIR /app
 COPY --from=builder /usr/src/easybuggy/target/easybuggy.jar /app/
 
-# Create logs directory
-RUN mkdir -p /app/logs
+# Create logs directory for application logs
+# Note: Do NOT pre-create .extract directory - the Tomcat7Runner needs to create it
+# during extraction to properly populate the webappWarPerContext map
+RUN mkdir -p /app/logs && \
+    chmod -R 777 /app
 
 # Expose application port and debug port
 EXPOSE 8080 9009

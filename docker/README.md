@@ -2,18 +2,39 @@
 
 This Docker Compose setup provides a complete DevSecOps CI/CD environment for the easybuggy project.
 
+## Architecture
+
+The environment uses ephemeral Docker agents for pipeline execution, with no builds running on the Jenkins controller. Images are built using Kaniko (daemonless) and stored in a local Docker registry.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                        Docker Compose Network                              │
+├─────────────┬─────────────┬─────────────┬─────────────┬────────────────────┤
+│  Jenkins    │  SonarQube  │  Registry   │  OWASP ZAP  │  Jenkins Agent     │
+│  Controller │  Server     │  (local)    │  (DAST)     │  (ephemeral)       │
+│  :8080      │  :9000      │  :5050      │  :8090      │  (dynamic)         │
+└─────────────┴─────────────┴─────────────┴─────────────┴────────────────────┘
+```
+
 ## Components
 
-- **SonarQube** (port 9000): Code quality and security analysis
-- **Jenkins** (port 8080): CI/CD automation with DevSecOps tools
+| Service           | Port | Purpose                                     |
+|------------------|------|---------------------------------------------|
+| **Jenkins**  | 8080 | CI/CD controller (no local builds)          |
+| **SonarQube**  | 9000 | SAST - Code quality and security            |
+| **Registry**  | 5050 | Local Docker image registry                 |
+| **OWASP ZAP**  | 8090 | DAST - Dynamic security scanning            |
+| **Jenkins Agent**  |-    | Ephemeral agent with DevSecOps tools        |
 
-## Pre-installed Tools in Jenkins
+## Security Tools
 
-- Maven 3.8.7
-- Docker CLI
-- Snyk CLI
-- Checkov
-- Terraform
+| Tool | Type | Output Format |
+|------|------|---------------|
+| SonarQube | SAST | JSON (via API) |
+| OWASP Dependency-Check | SCA | XML/JSON |
+| Snyk | SCA + Container | JSON |
+| Checkov | IaC | JSON |
+| OWASP ZAP | DAST | JSON + HTML |
 
 ## Quick Start
 
@@ -31,6 +52,8 @@ This Docker Compose setup provides a complete DevSecOps CI/CD environment for th
 3. **Access the services:**
    - Jenkins: http://localhost:8080 (admin/admin)
    - SonarQube: http://localhost:9000 (admin/admin)
+   - Registry: http://localhost:5050/v2/_catalog
+   - ZAP API: http://localhost:8090
 
 ## Initial Setup
 
@@ -43,26 +66,36 @@ This Docker Compose setup provides a complete DevSecOps CI/CD environment for th
    - Generate a new token named `jenkins`
    - Copy the token
 
-### Jenkins Configuration
+### Jenkins Credentials
 
-1. Login to Jenkins (admin/admin)
-2. Add the SonarQube token as a credential:
-   - Go to Manage Jenkins > Credentials
-   - Add a "Secret text" credential with ID `SONAR_TOKEN`
-   - Paste the SonarQube token
-3. Add Docker Hub credentials (if pushing images):
-   - Add "Username with password" credential with ID `dockerlogin`
-4. Add Snyk token (optional):
-   - Add "Secret text" credential with ID `SNYK_TOKEN`
-5. Add NVD API key (optional):
-   - Add "Secret text" credential with ID `NVD_API_KEY`
-   - Get an API key from https://nvd.nist.gov/developers/request-an-api-key
+Add the following credentials in Jenkins (Manage Jenkins > Credentials):
+
+| Credential ID | Type | Purpose | Required |
+|---------------|------|---------|----------|
+| `SONAR_TOKEN` | Secret text | SonarQube authentication | Yes |
+| `SNYK_TOKEN`  | Secret text | Snyk SCA and container scanning | Yes |
+| `NVD_API_KEY` | Secret text | OWASP Dependency-Check updates | Optional |
+
+**Get API Keys:**
+- **Snyk**: https://app.snyk.io/account
+- **NVD**: https://nvd.nist.gov/developers/request-an-api-key
 
 ### Create a Pipeline Job
 
 1. Create a new Pipeline job in Jenkins
 2. Configure it to use `Jenkinsfile.docker` from your repository
 3. Run the build!
+
+## Pipeline Artifacts
+
+All security scan results are archived as Jenkins artifacts and retained for 10 builds:
+
+- `sonar-report.json` - SonarQube issues
+- `dependency-check-report.xml` - OWASP Dependency-Check
+- `snyk-sca-report.json` - Snyk SCA findings
+- `snyk-container-report.json` - Snyk container scan
+- `checkov-report.json` - Checkov IaC findings
+- `zap-report.json` / `zap-report.html` - OWASP ZAP DAST results
 
 ## Stopping the Environment
 
@@ -73,45 +106,4 @@ docker-compose down
 To remove all data (volumes):
 ```bash
 docker-compose down -v
-```
-
-## Build Pipeline Flow
-
-```mermaid
-graph TB
-    Start([Enable Docker Build]) --> Check{Credentials<br/>Ready?}
-    
-    Check -->|No| Setup[Setup Credentials]
-    Check -->|Yes| Enable[Set BUILD_DOCKER='true']
-    
-    Setup --> Docker[Create Docker Hub PAT]
-    Setup --> Snyk[Get Snyk API Token]
-    
-    Docker --> DockerSteps["1. hub.docker.com<br/>2. Account Settings → Security<br/>3. New Access Token<br/>4. Copy token (dckr_pat_...)"]
-    Snyk --> SnykSteps["1. app.snyk.io<br/>2. Account settings<br/>3. Auth Token → Click to show<br/>4. Copy token"]
-    
-    DockerSteps --> AddDocker[Add to Jenkins as 'dockerlogin'<br/>Type: Username with password]
-    SnykSteps --> AddSnyk[Add to Jenkins as 'SNYK_TOKEN'<br/>Type: Secret text]
-    
-    AddDocker --> Enable
-    AddSnyk --> Enable
-    
-    Enable --> Run[Run Pipeline]
-    
-    Run --> Stage1[Stage 1: Checkout]
-    Stage1 --> Stage2[Stage 2: Build & SonarQube]
-    Stage2 --> Stage3[Stage 3: OWASP Dependency Check]
-    Stage3 --> Stage4[Stage 4: Build Docker Image]
-    Stage4 --> Stage5[Stage 5: Snyk Container Scan]
-    Stage5 --> Stage6[Stage 6: Snyk SCA Scan]
-    Stage6 --> Stage7[Stage 7: Checkov IaC Scan]
-    Stage7 --> Success([Pipeline Complete])
-    
-    style Start fill:#e1f5ff,stroke:#0066cc,color:#000
-    style Success fill:#d4edda,stroke:#28a745,color:#000
-    style Docker fill:#fff3cd,stroke:#ffc107,color:#000
-    style Snyk fill:#fff3cd,stroke:#ffc107,color:#000
-    style Stage4 fill:#cfe2ff,stroke:#0d6efd,color:#000
-    style Stage5 fill:#cfe2ff,stroke:#0d6efd,color:#000
-    style Enable fill:#d1ecf1,stroke:#0c5460,color:#000
 ```
