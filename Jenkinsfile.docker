@@ -18,9 +18,9 @@
 
 pipeline {
     // Use Docker Cloud agent provisioned by Jenkins
-    // The 'devsecops-agent' label matches the Docker Cloud template
+    // The 'devops-agent' label matches the Docker Cloud template
     agent {
-        label 'devsecops-agent'
+        label 'devops-agent'
     }
 
     options {
