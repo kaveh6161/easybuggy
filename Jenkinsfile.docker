@@ -40,6 +40,12 @@ pipeline {
         ZAP_HOST = 'http://zap:8090'
         ZAP_TIMEOUT_MINUTES = '20'
         REPORTS_DIR = 'security-reports'
+        // App source directory (contains pom.xml, Dockerfile, and source code)
+        APP_DIR = 'easybuggy-app'
+        // Infrastructure as Code directory (contains Terraform files)
+        IAC_DIR = 'infrastructure/terraform'
+        // Docker network for DAST testing (must match docker-compose network)
+        DOCKER_NETWORK = 'docker_devsecops-network'
     }
 
     stages {
@@ -53,11 +59,13 @@ pipeline {
 
         stage('Build and Test') {
             steps {
-                sh 'mvn -Dmaven.test.failure.ignore clean verify'
+                dir("${APP_DIR}") {
+                    sh 'mvn -Dmaven.test.failure.ignore clean verify'
+                }
             }
             post {
                 always {
-                    junit testResults: '**/target/surefire-reports/*.xml', allowEmptyResults: true
+                    junit testResults: "${APP_DIR}/**/target/surefire-reports/*.xml", allowEmptyResults: true
                 }
             }
         }
@@ -65,12 +73,14 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
-                    sh '''
-                        mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-                            -Dsonar.token=$SONAR_TOKEN \
-                            -Dsonar.projectKey=easybuggy \
-                            -Dsonar.host.url=${SONAR_HOST_URL} || true
-                    '''
+                    dir("${APP_DIR}") {
+                        sh '''
+                            mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+                                -Dsonar.token=$SONAR_TOKEN \
+                                -Dsonar.projectKey=easybuggy \
+                                -Dsonar.host.url=${SONAR_HOST_URL} || true
+                        '''
+                    }
                     // Export SonarQube results via API (best-effort)
                     sh '''
                         sleep 10  # Wait for analysis to complete
@@ -84,42 +94,26 @@ pipeline {
 
         stage('OWASP Dependency Check') {
             steps {
-                script {
-                    def nvdApiKeyExists = false
-                    try {
-                        withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_KEY')]) {
-                            nvdApiKeyExists = true
-                        }
-                    } catch (Exception e) {
-                        echo "NVD_API_KEY credential not found. Running with cached data only."
-                    }
-
-                    if (nvdApiKeyExists) {
-                        withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_KEY')]) {
-                            sh '''
-                                mvn org.owasp:dependency-check-maven:check \
-                                    -DfailBuildOnCVSS=11 \
-                                    -Dformat=ALL \
-                                    -DnvdApiKey=$NVD_KEY \
-                                    -DnvdApiDelay=6000 || true
-                            '''
-                        }
-                    } else {
+                // NVD_API_KEY credential is required for downloading vulnerability data
+                // Get a free API key at: https://nvd.nist.gov/developers/request-an-api-key
+                withCredentials([string(credentialsId: 'NVD_API_KEY', variable: 'NVD_KEY')]) {
+                    dir("${APP_DIR}") {
                         sh '''
                             mvn org.owasp:dependency-check-maven:check \
                                 -DfailBuildOnCVSS=11 \
                                 -Dformat=ALL \
-                                -DautoUpdate=false || true
+                                -DnvdApiKey=$NVD_KEY \
+                                -DnvdApiDelay=6000 || true
                         '''
                     }
                 }
                 // Copy report to reports directory
-                sh 'cp target/dependency-check-report.xml ${REPORTS_DIR}/ || true'
-                sh 'cp target/dependency-check-report.json ${REPORTS_DIR}/ || true'
+                sh 'cp ${APP_DIR}/target/dependency-check-report.xml ${REPORTS_DIR}/ || true'
+                sh 'cp ${APP_DIR}/target/dependency-check-report.json ${REPORTS_DIR}/ || true'
             }
             post {
                 always {
-                    dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+                    dependencyCheckPublisher pattern: "${APP_DIR}/**/dependency-check-report.xml"
                 }
             }
         }
@@ -129,11 +123,13 @@ pipeline {
                 stage('Snyk SCA') {
                     steps {
                         withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
-                            sh '''
-                                snyk auth $SNYK_TOKEN
-                                snyk test --json --severity-threshold=high \
-                                    > ${REPORTS_DIR}/snyk-sca-report.json || true
-                            '''
+                            dir("${APP_DIR}") {
+                                sh '''
+                                    snyk auth $SNYK_TOKEN
+                                    snyk test --json --severity-threshold=high \
+                                        > ../${REPORTS_DIR}/snyk-sca-report.json || true
+                                '''
+                            }
                         }
                     }
                 }
@@ -141,7 +137,7 @@ pipeline {
                 stage('Checkov IaC') {
                     steps {
                         sh '''
-                            checkov -f main.tf \
+                            checkov -d ${IAC_DIR} \
                                 --output json \
                                 --soft-fail \
                                 > ${REPORTS_DIR}/checkov-report.json || true
@@ -155,17 +151,19 @@ pipeline {
             steps {
                 // Build and push Docker image using buildx
                 // The agent has Docker socket access and buildx plugin installed
-                sh '''
-                    # Build and push the Docker image using buildx
-                    # --push flag builds and pushes in one step
-                    # --provenance=false avoids attestation issues with insecure registries
-                    docker buildx build \
-                        -t ${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER} \
-                        -t ${REGISTRY_URL}/${DOCKER_IMAGE}:latest \
-                        --push \
-                        --provenance=false \
-                        .
-                '''
+                dir("${APP_DIR}") {
+                    sh '''
+                        # Build and push the Docker image using buildx
+                        # --push flag builds and pushes in one step
+                        # --provenance=false avoids attestation issues with insecure registries
+                        docker buildx build \
+                            -t ${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER} \
+                            -t ${REGISTRY_URL}/${DOCKER_IMAGE}:latest \
+                            --push \
+                            --provenance=false \
+                            .
+                    '''
+                }
             }
         }
 
@@ -198,7 +196,7 @@ pipeline {
                             # Run easybuggy app on the same network as this agent
                             # The container name will be used as the hostname for network access
                             docker run -d --name easybuggy-dast-${BUILD_NUMBER} \
-                                --network docker_devsecops-network \
+                                --network ${DOCKER_NETWORK} \
                                 -p 18080:8080 \
                                 ${REGISTRY_URL}/${DOCKER_IMAGE}:${BUILD_NUMBER}
 

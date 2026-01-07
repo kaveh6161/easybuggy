@@ -1,5 +1,5 @@
 jenkins:
-  systemMessage: "DevSecOps Jenkins - Configured automatically with JCasC. All jobs run on ephemeral Docker agents."
+  systemMessage: "DevOps Jenkins - Configured automatically with JCasC. All jobs run on ephemeral Docker agents."
   # No executors on controller - all jobs run on Docker agents
   numExecutors: 0
   mode: EXCLUSIVE
@@ -40,12 +40,12 @@ jenkins:
           dockerHost:
             uri: "unix:///var/run/docker.sock"
         templates:
-          # DevSecOps Agent - for most pipeline stages
-          - labelString: "devsecops-agent"
-            name: "devsecops-agent"
+          # DevOps Agent - for most pipeline stages
+          - labelString: "devops-agent"
+            name: "devops-agent"
             dockerTemplateBase:
-              image: "devsecops-agent:latest"
-              network: "docker_devsecops-network"
+              image: "devops-agent:latest"
+              network: "docker_devops-network"
               # Mount Docker socket so agent can run Docker CLI commands
               mounts:
                 - "type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock"
@@ -59,21 +59,6 @@ jenkins:
             # Use local image - don't try to pull from registry
             pullStrategy: PULL_NEVER
 
-          # Kaniko Agent - for building Docker images without Docker daemon
-          - labelString: "kaniko"
-            name: "kaniko-agent"
-            dockerTemplateBase:
-              image: "gcr.io/kaniko-project/executor:debug"
-              network: "docker_devsecops-network"
-            remoteFs: "/workspace"
-            connector:
-              attach:
-                user: "root"
-            instanceCapStr: "1"
-            retentionStrategy:
-              idleMinutes: 5
-            # Pull from GCR as needed
-            pullStrategy: PULL_LATEST
 
 tool:
   maven:

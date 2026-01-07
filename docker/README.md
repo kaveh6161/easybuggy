@@ -18,13 +18,13 @@ The environment uses ephemeral Docker agents for pipeline execution, with no bui
 
 ## Components
 
-| Service           | Port | Purpose                                     |
-|------------------|------|---------------------------------------------|
+| Service            | Port | Purpose                                     |
+|--------------------|------|---------------------------------------------|
 | **Jenkins**  | 8080 | CI/CD controller (no local builds)          |
 | **SonarQube**  | 9000 | SAST - Code quality and security            |
 | **Registry**  | 5050 | Local Docker image registry                 |
 | **OWASP ZAP**  | 8090 | DAST - Dynamic security scanning            |
-| **Jenkins Agent**  |-    | Ephemeral agent with DevSecOps tools        |
+| **Jenkins Agent**  |  -   | Ephemeral agent with Build + DevSecOps tools        |
 
 ## Security Tools
 
@@ -97,13 +97,45 @@ All security scan results are archived as Jenkins artifacts and retained for 10 
 - `checkov-report.json` - Checkov IaC findings
 - `zap-report.json` / `zap-report.html` - OWASP ZAP DAST results
 
-## Stopping the Environment
+## Constraints & Edge Cases
 
-```bash
-docker-compose down
+| Scenario | Handling |
+|----------|----------|
+| ZAP scan exceeds timeout | Fail gracefully, archive partial results |
+| Registry unavailable | Pipeline fails at image push stage |
+| easybuggy fails to start | DAST stage fails, other stages unaffected |
+| Snyk token missing | Skip Snyk stages with warning |
+| SonarQube unavailable | SAST stage fails, continue pipeline |
+
+## Remarks
+
+### Pipeline Stage Flow (Revised)
+
+```
+Checkout → Build & Test → SonarQube Analysis → OWASP Dep-Check
+                                                      ↓
+                              ┌───────────────────────┴───────────────────────┐
+                              ↓                                               ↓
+                    Snyk SCA Scan (parallel)                      Checkov IaC Scan (parallel)
+                              ↓                                               ↓
+                              └───────────────────────┬───────────────────────┘
+                                                      ↓
+                                        Build Image (Kaniko)
+                                                      ↓
+                                        Push to Registry
+                                                      ↓
+                                        Snyk Container Scan
+                                                      ↓
+                                    Deploy easybuggy Container
+                                                      ↓
+                                        ZAP DAST Scan
+                                                      ↓
+                                    Teardown & Archive Artifacts
 ```
 
-To remove all data (volumes):
-```bash
-docker-compose down -v
-```
+### References
+
+- [Kaniko Documentation](https://github.com/GoogleContainerTools/kaniko)
+- [OWASP ZAP Docker](https://www.zaproxy.org/docs/docker/)
+- [Jenkins Docker Agent Plugin](https://plugins.jenkins.io/docker-plugin/)
+- [Jenkins Artifact Archiving](https://www.jenkins.io/doc/pipeline/steps/core/#archiveartifacts-archive-the-artifacts)

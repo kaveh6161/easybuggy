@@ -5,8 +5,8 @@
 FROM jenkins/jenkins:2.543
 
 # Metadata
-LABEL maintainer="DevSecOps Team"
-LABEL description="Jenkins controller for DevSecOps pipeline (no build tools)"
+LABEL maintainer="DevOps Team"
+LABEL description="Jenkins controller for DevOps pipeline (no build tools)"
 
 # Switch to root for minimal setup
 USER root
