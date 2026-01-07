@@ -45,7 +45,7 @@ pipeline {
         // Infrastructure as Code directory (contains Terraform files)
         IAC_DIR = 'infrastructure/terraform'
         // Docker network for DAST testing (must match docker-compose network)
-        DOCKER_NETWORK = 'docker_devsecops-network'
+        DOCKER_NETWORK = 'docker_devops-network'
     }
 
     stages {
