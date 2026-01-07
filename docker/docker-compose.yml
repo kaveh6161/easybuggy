@@ -10,7 +10,7 @@ services:
     volumes:
       - registry_data:/var/lib/registry
     networks:
-      - devsecops-network
+      - devops-network
     deploy:
       resources:
         limits:
@@ -40,7 +40,7 @@ services:
       - sonarqube_logs:/opt/sonarqube/logs
       - sonarqube_extensions:/opt/sonarqube/extensions
     networks:
-      - devsecops-network
+      - devops-network
     deploy:
       resources:
         limits:
@@ -57,17 +57,17 @@ services:
       start_period: 300s
     restart: unless-stopped
 
-  # Jenkins Agent with DevSecOps tools (pre-built for pipeline use)
+  # Jenkins Agent with DevOps tools (pre-built for pipeline use)
   # This image is built but not run as a service - Jenkins spawns it dynamically
   jenkins-agent:
     build:
       context: ./agent
       dockerfile: Dockerfile
-    image: devsecops-agent:latest
+    image: devops-agent:latest
     container_name: jenkins-agent-builder
     command: ["echo", "Agent image built successfully"]
     networks:
-      - devsecops-network
+      - devops-network
     deploy:
       resources:
         limits:
@@ -86,7 +86,7 @@ services:
     ports:
       - "8090:8090"
     networks:
-      - devsecops-network
+      - devops-network
     deploy:
       resources:
         limits:
@@ -125,7 +125,7 @@ services:
       # Docker socket for spawning agents only (not exposed to build jobs)
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
-      - devsecops-network
+      - devops-network
     deploy:
       resources:
         limits:
@@ -150,7 +150,7 @@ services:
     restart: unless-stopped
 
 networks:
-  devsecops-network:
+  devops-network:
     driver: bridge
 
 volumes:

@@ -4,7 +4,7 @@
 FROM jenkins/inbound-agent:latest-jdk17
 
 # Metadata
-LABEL maintainer="DevSecOps Team"
+LABEL maintainer="DevOps Team"
 LABEL description="Jenkins agent with Maven, Snyk, Checkov, Node.js, and ZAP CLI"
 
 # Switch to root to install packages

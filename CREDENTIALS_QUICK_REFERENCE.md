@@ -109,7 +109,6 @@ Description: NVD API Key for vulnerability database updates
 - [ ] Snyk token created and added to Jenkins as `SNYK_TOKEN`
 - [ ] SonarQube token created and added to Jenkins as `SONAR_TOKEN`
 - [ ] (Optional) NVD API key added to Jenkins as `NVD_API_KEY`
-- [ ] `BUILD_DOCKER` set to `'true'` in Jenkinsfile.docker
 - [ ] All credentials have **Global** scope
 
 ### Test Credentials:
